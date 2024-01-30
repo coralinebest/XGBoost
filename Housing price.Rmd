@@ -1,0 +1,142 @@
+---
+title: "Midterm project- Predictive methods"
+author: "Alexandre Faux, Marcel Penda, Coraline Best"
+date: "2023-11-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#Loading packages
+library(pacman)
+p_load(tidyverse, data.table, broom, parallel, here, plotly, ggplot2, stargazer, magrittr,skimr,janitor,  tidymodels, ADAPTS, caret, yardstick, rlang, parsnip, sandwich, lmtest, haven, tinytex, rdrobust,dplyr, plotrix, plyr,readxl, usmap, stringr, finalfit, scales,tidyr, gridExtra, patchwork, EventStudy, fixest,kableExtra,wesanderson, gtsummary, maps, cowplot, corrplot, ggcorrplot, ggthemes,wesanderson, mgcv, lmtest, pdp,randomForest, plotmo,plot3D, leaflet, mapview,raster, rgdal, geodata, sf, usmap, xgboost)
+
+#setting directory
+setwd("/Users/coraline/Desktop/Master2/Predictive methods/Midterm")
+
+#Loading the data
+housing_data= read_csv("1553768847-housing.csv")
+
+options(scipen=999)
+
+#For reproducibility
+set.seed(00)
+
+```
+
+
+
+```{r cars}
+#Check for missing values
+skim(housing_data)
+
+#Replacing missing values for total bedrooms by 0
+housing_data$total_bedrooms[is.na(housing_data$total_bedrooms)]=0
+
+```
+
+#Descriptive statistics
+```{r}
+summary(housing_data)
+```
+
+
+```{r }
+states_map <- map_data("state")
+# Filtrer les données pour la Californie
+california_map <- filter(states_map, region == "california")
+
+# Plot the map
+ggplot() +
+  geom_polygon(data = california_map, aes(x = long, y = lat, group = group), fill = NA, color = "black")+
+  geom_point(data = housing_data, aes(x = longitude, y = latitude, color = median_house_value), size = 1)+scale_color_gradient(low = "#F0E442" , high = "red",name = "Median house value")+theme_bw()  +theme(panel.border= element_blank(), panel.grid.major= element_blank(), panel.grid.minor=element_blank())
+```
+
+#Implementation of the xgboost algorithm RESULTS
+```{r}
+# Cross validation
+# Split the data into training and testing sets
+index <- createDataPartition(housing_data$median_house_value, p = 0.8, list = FALSE)
+train_data <- housing_data[index, ]
+test_data <- housing_data[-index, ]
+
+X <- as.matrix(train_data[, -10]) 
+y <- train_data$median_house_value
+
+X <- apply(X, 2, as.numeric)
+
+dtrain <- xgb.DMatrix(data = X, label = y)
+
+# Hyperparameters grid search
+param_grid <- expand.grid(
+  eta = c(0.01, 0.1, 0.2, 0.3),
+  max_depth = c(3, 6, 9),
+  lambda = c(1, 5)
+)
+
+cv_results <- data.frame(eta = numeric(), max_depth = numeric(), rmse = numeric())
+
+for (i in 1:nrow(param_grid)) {
+  params <- list(
+    objective = "reg:squarederror",
+    eval_metric = "rmse",
+    eta = param_grid$eta[i],
+    max_depth = param_grid$max_depth[i],
+    alpha = 0.1,
+    lambda = param_grid$lambda[i]
+  )
+
+
+  cv_model <- xgb.cv(
+    params = params,
+    data = dtrain,
+    nfold = 5,  
+    nrounds = 100,  
+    verbose = 0
+  )
+
+  # Extract the last iteration's RMSE
+  rmse <- tail(cv_model$evaluation_log$test_rmse_mean, 1)
+
+  result <- data.frame(
+    eta = params$eta,
+    max_depth = params$max_depth,
+    lambda= params$lambda,
+    rmse = rmse
+  )
+
+  cv_results <- rbind(cv_results, result)
+}
+
+# View the results
+print(cv_results)
+
+```
+
+#Final test prediction with the chosen parameters
+```{r}
+set.seed(00)
+params <- list(
+  objective = "reg:squarederror",
+  eval_metric = "rmse",
+  eta = 0.2,
+  max_depth = 9,
+  lambda=5
+)
+
+xgb_model<- xgboost(params=params,data = dtrain,nrounds=100)
+
+
+
+X_test <- as.matrix(test_data[, -10]) 
+y_test <- test_data$median_house_value
+
+X_test <- apply(X_test, 2, as.numeric)
+
+dtest <- xgb.DMatrix(data = X_test, label = y_test)
+
+predictions <- predict(xgb_model, dtest)
+
+
+rmse <- sqrt(mean((predictions - y_test)^2))
+rmse
+```
