@@ -1,6 +1,6 @@
 ---
 title: "Midterm project- Predictive methods"
-author: "Alexandre Faux, Marcel Penda, Coraline Best"
+author: "Coraline Best"
 date: "2023-11-21"
 output: html_document
 ---
